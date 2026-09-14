@@ -69,6 +69,7 @@ export async function onRequestGet({ request, env, waitUntil }) {
               kidName + "'s personalized coloring book (12 pages) is ready:\n" + dlUrl + "\n\n" +
               "This is your permanent download link — save it somewhere safe. " +
               "You can re-download and print as many times as you like, forever.\n\n" +
+              "The PDF is high-resolution print quality — crisp on US Letter or A4 paper.\n\n" +
               "Prefer the animated unlock page? It's here:\n" + unlockUrl + "\n\n" +
               "Print tip: US Letter paper works great; cardstock makes the pages extra sturdy.\n\n" +
               "Happy coloring!\n-- Crayon Kid";
@@ -78,6 +79,7 @@ export async function onRequestGet({ request, env, waitUntil }) {
               '<div style="font-family:Comic Sans MS,Chalkboard SE,Segoe UI,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;">' +
               '<h1 style="text-align:center;">\u{1F389} ' + esc(kidName) + "'s book is ready!</h1>" +
               '<p style="text-align:center;color:#4b5563;">Thanks for your purchase — all <b>12 personalized pages</b>, ready to print.</p>' +
+              '<p style="text-align:center;color:#6b7280;font-size:13px;">High-resolution print PDF — crisp on US Letter or A4 paper.</p>' +
               '<p style="text-align:center;"><a href="' + dlUrl + '" style="display:inline-block;background:#22c55e;color:#fff;padding:14px 30px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:18px;">\u2B07\uFE0F Download the coloring book (PDF)</a></p>' +
               '<p style="text-align:center;color:#6b7280;font-size:13px;">This is your <b>permanent</b> download link — save it somewhere safe.<br>Re-download and print as many times as you like, forever.<br><br>Prefer the animated unlock page? <a href="' + unlockUrl + '">Open it here</a>.<br>\u{1F5A8}\uFE0F Print tip: US Letter paper works great; cardstock makes pages extra sturdy.</p>' +
               '<p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:24px;">Receipt for your $6 one-time purchase at Crayon Kid. Questions? Just reply to this email.</p>' +

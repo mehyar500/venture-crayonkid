@@ -1,14 +1,24 @@
 // functions/api/pdf.js
 // GET /api/pdf?token=... — build + serve the personalized 12-page PDF.
 // 1. Verifies the token against mehyar.us/api/pay/status (must be paid).
-// 2. Generates 12 themed coloring pages via Workers AI (parallel, cached).
-// 3. Assembles a US-Letter PDF with the kid's name drawn on every page.
-// 4. Caches the PDF in KV for 30 days so re-downloads are instant.
+// 2. Looks up purchase_context (by buyer email) for the complexity level,
+//    custom prompt, or photo description captured at free-page time. Falls
+//    back to the plain theme when absent.
+// 3. Generates 12 themed coloring pages via Workers AI (parallel, cached).
+// 4. Assembles a US-Letter PDF with the kid's name drawn on every page.
+// 5. Caches the PDF in KV for 30 days so re-downloads are instant.
+//
+// PRINT-QUALITY HONESTY (read before changing claims): the image model
+// (flux-1-schnell) emits fixed-resolution RASTER output (~1024px, JPEG).
+// There is no vector/upscaling knob in its schema. We embed those bytes at
+// FULL native resolution — crisp at US Letter/A4 print size — but "infinite
+// scaling" is never promised anywhere: not in code, not in email copy, not
+// in the FAQ. Keep it that way.
 
 import { PDFDocument, StandardFonts, rgb } from "../../lib/pdf-lib.bundle.js";
+import { LLM_MODEL, cleanName, sha256hex, aiImageBytes, lineArtPrompt,
+         scrubScene } from "../_shared/ai.js";
 
-const IMG_MODEL = "@cf/black-forest-labs/flux-1-schnell";
-const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 const PRODUCT_ID = "crayonkid-coloring-book";
 const STATUS_URL = "https://mehyar.us/api/pay/status?token=";
 const BROWSER_UA =
@@ -43,43 +53,44 @@ function fallbackScenes(theme) {
   ];
 }
 
-function lineArtPrompt(scene) {
-  // NB: do NOT use "children"/"kids" — the Workers AI safety filter flags them
-  // on image calls. "Coloring book page" conveys the style alone.
-  return (
-    "Coloring book page, black and white line art: " + scene + ". " +
-    "Bold thick black outlines only, pure white background, absolutely no shading, " +
-    "no gradients, no grayscale, no color, simple clean line art, large easy shapes, " +
-    "cute and friendly. No text, no words, no letters, no watermark."
-  );
+// The buyer's creative context, captured at free-page time in the worker's
+// own D1 (purchase_context, keyed by email). The centralized /api/pay/status
+// only exposes kid_name/theme, so this table is how complexity, custom
+// prompts, and photo descriptions reach the paid book. Absent row = defaults.
+async function loadPurchaseContext(env, email) {
+  const ctx = { complexity: "simple", custom_prompt: null, photo_desc: null, theme: "dinosaurs" };
+  if (!env.DB || !email) return ctx;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT theme, complexity, custom_prompt, photo_desc_id FROM purchase_context WHERE email = ?"
+    ).bind(email).first();
+    if (row) {
+      ctx.complexity = row.complexity === "detailed" ? "detailed" : "simple";
+      ctx.custom_prompt = typeof row.custom_prompt === "string" && row.custom_prompt ? row.custom_prompt.slice(0, 200) : null;
+      ctx.theme = typeof row.theme === "string" ? row.theme : "dinosaurs";
+      const descId = row.photo_desc_id;
+      if (descId && env.CACHE) {
+        const desc = await env.CACHE.get("photodesc:" + descId).catch(() => null);
+        if (desc) ctx.photo_desc = String(desc).slice(0, 200);
+      }
+    }
+  } catch (e) {
+    console.error("purchase_context lookup failed", e && e.message);
+  }
+  return ctx;
 }
 
-function sha256hex(str) {
-  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then((buf) =>
-    [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("")
-  );
-}
-
-// flux-1-schnell returns { image: "<base64>" } via the Workers AI binding.
-async function aiImageBytes(env, prompt) {
-  const out = await env.AI.run(IMG_MODEL, { prompt });
-  let b64 = null;
-  if (out && typeof out.image === "string") b64 = out.image;
-  else if (typeof out === "string") b64 = out;
-  if (!b64) throw new Error("unexpected_ai_output");
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-async function sceneImage(env, theme, scene) {
-  const cacheKey = "img:" + (await sha256hex(theme + "::" + scene));
+async function sceneImage(env, theme, scene, complexity, descriptor) {
+  // Legacy key for the default path (simple preset-theme scenes) so existing
+  // cached drawings are reused instead of regenerated.
+  const isLegacy = complexity === "simple" && descriptor === "theme:" + theme;
+  const input = isLegacy ? (theme + "::" + scene) : ("v2:" + complexity + ":" + descriptor + "::" + scene);
+  const cacheKey = "img:" + (await sha256hex(input));
   const cached = await env.CACHE.get(cacheKey, "arrayBuffer").catch(() => null);
   if (cached && cached.byteLength > 10000) return new Uint8Array(cached);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const bytes = await aiImageBytes(env, lineArtPrompt(scene));
+      const bytes = await aiImageBytes(env, lineArtPrompt(scene, complexity));
       if (bytes && bytes.byteLength > 10000) {
         await env.CACHE.put(cacheKey, bytes, { expirationTtl: 60 * 60 * 24 * 30 }).catch(() => {});
         return bytes;
@@ -91,7 +102,14 @@ async function sceneImage(env, theme, scene) {
   return null;
 }
 
-async function planScenes(env, theme) {
+async function planScenes(env, theme, ctx) {
+  // Describe WHAT the 12 pages are about: custom prompt > photo subject > theme.
+  let about = '"' + theme + '"';
+  if (ctx.custom_prompt) about = 'the coloring-book idea "' + ctx.custom_prompt + '"';
+  else if (ctx.photo_desc) about = 'photos of ' + ctx.photo_desc;
+  const detailHint = ctx.complexity === "detailed"
+    ? " Make them richly detailed with intricate patterns for ages 6+."
+    : " Keep them simple with big bold shapes for ages 3-5.";
   try {
     const out = await env.AI.run(LLM_MODEL, {
       messages: [
@@ -99,8 +117,9 @@ async function planScenes(env, theme) {
         {
           role: "user",
           content:
-            'List 12 short, distinct, kid-friendly coloring page scene ideas about "' + theme +
-            '" for ages 3-8. Each under 12 words, cute and simple. ' +
+            'List 12 short, distinct, kid-friendly coloring page scene ideas about ' + about +
+            " for ages 3-8." + detailHint +
+            ' Each under 12 words, cute and simple. ' +
             'Return ONLY a JSON array of 12 strings, e.g. ["a smiling ...", ...].',
         },
       ],
@@ -110,22 +129,17 @@ async function planScenes(env, theme) {
     if (m) {
       const arr = JSON.parse(m[0]);
       if (Array.isArray(arr)) {
-        const scenes = arr.filter((s) => typeof s === "string" && s.length > 3).slice(0, 12);
+        const scenes = arr
+          .filter((s) => typeof s === "string" && s.length > 3)
+          .map((s) => scrubScene(s))
+          .slice(0, 12);
         if (scenes.length >= 10) return scenes;
       }
     }
   } catch (e) {
     console.error("scene planning failed", e && e.message);
   }
-  return fallbackScenes(theme);
-}
-
-function cleanName(v) {
-  return String(v || "")
-    .replace(/[^\p{L} '\-]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 24);
+  return fallbackScenes(theme).map(scrubScene);
 }
 
 // flux-1-schnell returns JPEG bytes; sniff the magic and use the right embedder.
@@ -154,7 +168,9 @@ async function buildPdf(kidName, images) {
     // Thin crayon-underline.
     page.drawRectangle({ x: (PW - w) / 2, y: PH - 88, width: w, height: 3, color: rgb(0.96, 0.62, 0.04) });
 
-    // Coloring image, scaled to fit.
+    // Coloring image, embedded at FULL native resolution (raster, ~1024px)
+    // and scaled to fit the page. Crisp at US Letter/A4 print — see the
+    // honesty note at the top of this file.
     const img = await embedImage(doc, images[i]);
     const dims = img.scale(1);
     const s = Math.min(540 / dims.width, 560 / dims.height);
@@ -215,13 +231,21 @@ export async function onRequestGet({ request, env }) {
       return pdfResponse(cached, kidName);
     }
 
-    // 3. Plan 12 scenes, then generate images in parallel.
-    const scenes = await planScenes(env, theme);
+    // 3. Load the buyer's creative context, plan 12 scenes, generate images.
+    const ctx = await loadPurchaseContext(env, sj.email);
+    const descriptor = ctx.custom_prompt
+      ? "prompt:" + ctx.custom_prompt
+      : ctx.photo_desc
+        ? "photo:" + ctx.photo_desc
+        : "theme:" + theme;
+    const scenes = await planScenes(env, theme, ctx);
     while (scenes.length < 12) scenes.push(fallbackScenes(theme)[scenes.length % 12]);
-    const results = await Promise.allSettled(scenes.slice(0, 12).map((s) => sceneImage(env, theme, s)));
+    const results = await Promise.allSettled(
+      scenes.slice(0, 12).map((s) => sceneImage(env, theme, s, ctx.complexity, descriptor))
+    );
 
     // 4. Guarantee 12 pages: substitute the signature scene for any failure.
-    const sigBytes = await sceneImage(env, theme, SIGNATURE_SCENE[theme]);
+    const sigBytes = await sceneImage(env, theme, SIGNATURE_SCENE[theme], ctx.complexity, descriptor);
     const images = results.map((r) =>
       r.status === "fulfilled" && r.value ? r.value : sigBytes
     );
