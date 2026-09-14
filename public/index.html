@@ -143,6 +143,41 @@
 
 <script>
 let theme = "dinosaurs";
+// Deep-link reactivation (?kid=..&theme=.. from the free-page email):
+// restore the parent's setup so one tap brings them right back.
+(function deepLink() {
+  const qs = new URLSearchParams(location.search);
+  const kid = (qs.get("kid") || "").replace(/[^\p{L} '\-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 24);
+  const th = (qs.get("theme") || "").toLowerCase().trim();
+  const valid = Array.from(document.querySelectorAll(".theme")).map(t => t.dataset.t);
+  let restored = false;
+  if (kid.length >= 2) { document.getElementById("kidName").value = kid; restored = true; }
+  if (valid.includes(th)) {
+    document.querySelectorAll(".theme").forEach(t => t.classList.toggle("sel", t.dataset.t === th));
+    theme = th; restored = true;
+  }
+  if (restored) {
+    const banner = document.createElement("div");
+    banner.style.cssText = "background:#fef08a;border:3px solid #1f2937;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-family:'Segoe UI',sans-serif;";
+    const b1 = document.createElement("b"); b1.textContent = "👋 Welcome back! ";
+    const b2 = document.createElement("span");
+    b2.textContent = "Your setup" + (kid.length >= 2 ? " for " + kid : "") + " is restored — enter your email and tap the button to see the page again.";
+    banner.appendChild(b1); banner.appendChild(b2);
+    const card = document.querySelector(".card");
+    card.insertBefore(banner, card.children[2]);
+    document.querySelector("section.builder").scrollIntoView({ block: "start" });
+    document.getElementById("email").focus({ preventScroll: true });
+  }
+  // Stripe cancel return (?canceled=1): reassure, invite retry.
+  if (qs.get("canceled") === "1") {
+    const note = document.createElement("div");
+    note.style.cssText = "background:#fee2e2;border:3px solid #ef4444;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-family:'Segoe UI',sans-serif;";
+    note.textContent = "Payment was canceled — no charge was made. Your free page is still here whenever you're ready. 💛";
+    const card = document.querySelector(".card");
+    card.insertBefore(note, card.children[2]);
+  }
+})();
+
 document.getElementById("themes").addEventListener("click", e => {
   const el = e.target.closest(".theme");
   if (!el) return;

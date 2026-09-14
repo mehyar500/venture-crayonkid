@@ -3,6 +3,15 @@
 // Body: { kid_name, theme, email }
 // Stores the lead in D1, rate-limits per IP, returns the page as a data URL.
 // The kid's name is overlaid client-side (image models mangle text).
+// Also fires the free-page transactional email (reactivation) in the
+// background — deduped in D1 so retries never double-send.
+
+import { sendCloudflareEmail } from "../_shared/cloudflareEmail.js";
+import { claimSend, markSend } from "../_shared/emailSends.js";
+
+const SITE = "https://crayonkid.mehyar.us";
+const FROM_EMAIL = "team@mehyar.us";
+const FROM_NAME = "Crayon Kid";
 
 const THEMES = {
   "dinosaurs": "a cute smiling T-Rex with baby dinosaurs",
@@ -76,7 +85,7 @@ function toDataUrl(bytes, mime) {
   return "data:" + mime + ";base64," + btoa(bin);
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   try {
     const body = await request.json().catch(() => ({}));
     const kidName = cleanName(body.kid_name);
@@ -120,6 +129,57 @@ export async function onRequestPost({ request, env }) {
       return json({ ok: false, error: "generation_failed" }, 502);
     }
     bytes = new Uint8Array(bytes);
+
+    // Fire the free-page email in the background — never delay the response.
+    // Deduped on (email, kid, theme): retries or repeat generations send once.
+    if (typeof waitUntil === "function") {
+      const sendKey = email + "|" + kidName + "|" + theme;
+      waitUntil(
+        (async () => {
+          try {
+            const key = await sha256hex("free_page:" + sendKey);
+            const claimed = await claimSend(env.DB, "free_page", key, email);
+            if (!claimed) return; // already sent for this email+kid+theme
+            const deepLink =
+              SITE + "/?kid=" + encodeURIComponent(kidName) + "&theme=" + encodeURIComponent(theme);
+            const imgUrl = SITE + "/api/page-image?theme=" + encodeURIComponent(theme);
+            const subject = "\u{1F58D}\uFE0F " + kidName + "'s coloring page is ready!";
+            const text =
+              "Hi!\n\n" +
+              "Here's the free coloring page we drew for " + kidName + ":\n" + imgUrl + "\n\n" +
+              "Their name looks GREAT on it — and it looks even better on all 12 pages.\n\n" +
+              "Come back and unlock the full personalized book ($6, one-time):\n" + deepLink + "\n\n" +
+              "Your link above restores " + kidName + "'s setup, so one tap brings you right back.\n\n" +
+              "Happy coloring!\n-- Crayon Kid";
+            const esc = (s) =>
+              String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            const html =
+              '<div style="font-family:Comic Sans MS,Chalkboard SE,Segoe UI,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;">' +
+              '<h1 style="text-align:center;">\u{1F58D}\uFE0F ' + esc(kidName) + "'s coloring page is ready!</h1>" +
+              '<p style="text-align:center;color:#4b5563;">Here\'s the free page we drew — their name looks <b>great</b> on it.</p>' +
+              '<p style="text-align:center;"><a href="' + deepLink + '"><img src="' + imgUrl + '" alt="' + esc(kidName) + '\'s coloring page" style="max-width:100%;border:3px solid #1f2937;border-radius:12px;"></a></p>' +
+              '<p style="text-align:center;color:#4b5563;">Imagine their name on <b>twelve</b> pages like this…</p>' +
+              '<p style="text-align:center;"><a href="' + deepLink + '" style="display:inline-block;background:#f97316;color:#fff;padding:14px 30px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:18px;">\u{1F449} See ' + esc(kidName) + '\'s page &amp; unlock all 12 — $6</a></p>' +
+              '<p style="text-align:center;color:#6b7280;font-size:13px;">Your link restores ' + esc(kidName) + '\'s setup — one tap brings you right back.<br>Print the free page any time: <a href="' + imgUrl + '">' + imgUrl + "</a></p>" +
+              '<p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:24px;">You\'re getting this because you created a free coloring page at Crayon Kid. No spam, ever — just your page.</p>' +
+              "</div>";
+            const result = await sendCloudflareEmail(env, {
+              from: FROM_EMAIL,
+              fromName: FROM_NAME,
+              to: email,
+              replyTo: "info@mehyar.us",
+              subject,
+              text,
+              html,
+            });
+            await markSend(env.DB, "free_page", key, result.ok, result.ok ? result.messageId : result.error);
+            if (!result.ok) console.error("free-page email failed", result.error);
+          } catch (e) {
+            console.error("free-page email threw", e && e.message);
+          }
+        })()
+      );
+    }
 
     return json({ ok: true, image: toDataUrl(bytes, sniffMime(bytes)), kid_name: kidName, theme });
   } catch (e) {

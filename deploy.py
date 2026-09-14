@@ -15,9 +15,13 @@ What it does:
 
 Safety note: `wrangler pages deploy` replaces the Pages project's env vars with
 wrangler.toml [vars]. That is safe here because this project has NO [vars] at
-all and NO dashboard-only vars — the committed wrangler.toml bindings are the
-complete authoritative set (AI, DB, CACHE). Never use this pattern on a project
-whose secrets live only in the dashboard (e.g. mehyar-web).
+all. IMPORTANT (verified 2026-09-14): a deploy WIPES plain_text dashboard env
+vars but PRESERVES secret_text ones. The transactional-email credentials
+(CLOUDFLARE_EMAIL, CF_EMAIL_ACCOUNT_ID, CF_EMAIL_GLOBAL_KEY) are therefore
+stored as secret_text on the crayonkid project — do NOT convert them to
+plain_text or the next deploy will drop them. New secret vars also require a
+redeploy to bind. Never use this pattern on a project whose secrets live only
+in the dashboard (e.g. mehyar-web).
 
 Requires: node + npm, and `wrangler` (installed automatically if missing).
 """
