@@ -1,0 +1,23 @@
+# wrangler.toml — Crayon Kid (Cloudflare Pages project: crayonkid)
+#
+# IMPORTANT: this file deliberately has NO [vars] section. The project's
+# dashboard/plain env vars must never be replaced by a deploy. Bindings below
+# intentionally match the ones already configured on the Pages project, so a
+# sync is idempotent.
+
+name = "crayonkid"
+compatibility_date = "2026-09-14"
+pages_build_output_dir = "public"
+
+# Workers AI binding — the only AI access path (no API tokens needed).
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crayonkid_db"
+database_id = "baa59e21-216c-4386-baf0-240262ccdc97"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "a0f96a11a03d4f6cb868d2e85f5a1141"

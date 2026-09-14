@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Crayon Kid Book is Ready! 🖍️</title>
+<style>
+  :root { --ink:#1f2937; --paper:#fffbeb; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Comic Sans MS","Chalkboard SE","Segoe UI",sans-serif; color:var(--ink); background:var(--paper);
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { background:#fff; border:4px solid var(--ink); border-radius:24px; padding:44px 36px; max-width:560px;
+    width:100%; text-align:center; box-shadow:10px 10px 0 var(--ink); }
+  .logo { font-size:72px; }
+  h1 { font-size:34px; margin:12px 0 8px; }
+  p { font-family:"Segoe UI",sans-serif; color:#4b5563; margin:10px 0; line-height:1.5; }
+  .bar { height:22px; border:3px solid var(--ink); border-radius:12px; overflow:hidden; margin:26px 0 8px; background:#f3f4f6; }
+  .bar > div { height:100%; width:5%; background:repeating-linear-gradient(-45deg,#22c55e 0 14px,#16a34a 14px 28px);
+    transition:width .5s; }
+  #status { font-weight:bold; min-height:28px; }
+  .btn { display:none; border:3px solid var(--ink); border-radius:14px; padding:16px 34px; font-size:20px; font-weight:bold;
+    font-family:inherit; cursor:pointer; box-shadow:5px 5px 0 var(--ink); background:#f97316; color:#fff; margin-top:18px; }
+  .btn:hover { transform:translateY(-2px); }
+  #errBox { display:none; background:#fee2e2; border:3px solid #ef4444; border-radius:12px; padding:14px; margin-top:18px;
+    font-family:"Segoe UI",sans-serif; }
+  .tip { font-size:13px; margin-top:22px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🖍️</div>
+  <h1 id="title">Coloring your pages…</h1>
+  <p id="desc">We're drawing <b>12 personalized coloring pages</b> starring <b id="kidName">your kid</b>. This takes about 30–60 seconds — hang tight!</p>
+  <div class="bar"><div id="barFill"></div></div>
+  <div id="status">Warming up the crayons…</div>
+  <button class="btn" id="dlBtn">⬇️ Download my coloring book (PDF)</button>
+  <div id="errBox"></div>
+  <p class="tip">🖨️ Tip: print on US Letter paper. Cardstock makes the pages extra sturdy for enthusiastic colorers.</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const token = new URLSearchParams(location.search).get("token") || "";
+let pdfBlobUrl = null;
+
+const steps = ["Warming up the crayons…","Sketching page 3 of 12…","Adding dinosaurs…","Sketching page 7 of 12…",
+  "Sharpening the outlines…","Sketching page 11 of 12…","Writing names in big bold letters…","Binding your book…"];
+let si = 0;
+const stepTimer = setInterval(() => {
+  si = Math.min(si + 1, steps.length - 1);
+  $("status").textContent = steps[si];
+  $("barFill").style.width = Math.min(95, 8 + si * 12) + "%";
+}, 7000);
+
+async function run() {
+  if (!token) return fail("This link is missing its access token. Please use the link from your checkout.");
+  try {
+    const r = await fetch("/api/pdf?token=" + encodeURIComponent(token));
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 402 || d.error === "not_paid") return fail("We couldn't confirm your payment yet. If you just paid, wait a minute and refresh — Stripe sometimes takes a moment.");
+      if (r.status === 403) return fail("This download link isn't valid. Double-check the link from your checkout page.");
+      throw new Error(d.error || ("Server hiccup (" + r.status + ") — try refreshing."));
+    }
+    const blob = await r.blob();
+    pdfBlobUrl = URL.createObjectURL(blob);
+    const cd = r.headers.get("content-disposition") || "";
+    const m = cd.match(/filename="([^"]+)"/);
+    const fname = m ? m[1] : "crayon-kid-coloring-book.pdf";
+    clearInterval(stepTimer);
+    $("barFill").style.width = "100%";
+    $("title").textContent = "Your book is ready! 🎉";
+    $("desc").innerHTML = "All 12 pages, personalized and ready to print. Happy coloring!";
+    $("status").textContent = "";
+    const btn = $("dlBtn");
+    btn.style.display = "inline-block";
+    btn.onclick = () => {
+      const a = document.createElement("a");
+      a.href = pdfBlobUrl; a.download = fname;
+      document.body.appendChild(a); a.click(); a.remove();
+    };
+    btn.click(); // auto-start the download
+  } catch (e) {
+    fail(e.message || "Something went wrong — try refreshing the page.");
+  }
+}
+function fail(msg) {
+  clearInterval(stepTimer);
+  $("title").textContent = "Hmm, a smudge… 😅";
+  $("desc").textContent = "";
+  $("status").textContent = "";
+  const b = $("errBox");
+  b.textContent = msg;
+  b.style.display = "block";
+}
+run();
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crayon Kid — A Coloring Book With YOUR Kid's Name On Every Page</title>
+<meta name="description" content="Type your kid's name, pick a theme, and get a personalized coloring page instantly. Unlock all 12 pages for $6.">
+<style>
+  :root { --ink:#1f2937; --crayon-red:#ef4444; --crayon-orange:#f97316; --crayon-yellow:#eab308;
+          --crayon-green:#22c55e; --crayon-blue:#3b82f6; --crayon-purple:#a855f7; --paper:#fffbeb; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Comic Sans MS","Chalkboard SE","Segoe UI",sans-serif; color:var(--ink); background:var(--paper); }
+  .wrap { max-width:920px; margin:0 auto; padding:0 20px; }
+  header.hero { text-align:center; padding:56px 20px 30px;
+    background:repeating-linear-gradient(-45deg,#fef3c7 0 24px,#fffbeb 24px 48px); border-bottom:6px dashed var(--crayon-orange); }
+  .logo { font-size:64px; }
+  h1 { font-size:clamp(32px,6vw,54px); line-height:1.1; margin:10px 0; }
+  h1 .hl { background:linear-gradient(transparent 55%, #fde68a 55%); padding:0 6px; }
+  .sub { font-size:19px; color:#4b5563; max-width:620px; margin:12px auto 0; }
+  .steps { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin:34px 0 8px; }
+  .step { background:#fff; border:3px solid var(--ink); border-radius:16px; padding:16px 18px; width:250px;
+    box-shadow:5px 5px 0 var(--ink); text-align:left; }
+  .step .n { display:inline-block; width:34px; height:34px; border-radius:50%; color:#fff; font-weight:bold;
+    text-align:center; line-height:34px; margin-bottom:8px; }
+  .step h3 { font-size:17px; margin-bottom:6px; }
+  .step p { font-size:14px; color:#4b5563; font-family:"Segoe UI",sans-serif; }
+  section.builder { padding:44px 0; }
+  .card { background:#fff; border:3px solid var(--ink); border-radius:20px; padding:28px; box-shadow:8px 8px 0 var(--ink); }
+  .card h2 { font-size:28px; margin-bottom:6px; }
+  .card .hint { color:#6b7280; font-family:"Segoe UI",sans-serif; font-size:15px; margin-bottom:20px; }
+  label { display:block; font-weight:bold; margin:18px 0 8px; font-size:17px; }
+  input[type=text], input[type=email] { width:100%; padding:14px 16px; font-size:18px; border:3px solid var(--ink);
+    border-radius:12px; font-family:inherit; }
+  input:focus { outline:3px solid var(--crayon-yellow); }
+  .themes { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; }
+  .theme { border:3px solid var(--ink); border-radius:14px; padding:12px 8px; text-align:center; cursor:pointer;
+    background:#fff; font-size:15px; transition:transform .08s; user-select:none; }
+  .theme .e { font-size:34px; display:block; }
+  .theme:hover { transform:translateY(-2px); }
+  .theme.sel { background:#fef08a; box-shadow:3px 3px 0 var(--ink); }
+  .btn { display:inline-block; border:3px solid var(--ink); border-radius:14px; padding:16px 34px; font-size:20px;
+    font-weight:bold; font-family:inherit; cursor:pointer; box-shadow:5px 5px 0 var(--ink); transition:transform .08s; }
+  .btn:hover { transform:translateY(-2px); }
+  .btn:active { transform:translate(2px,2px); box-shadow:2px 2px 0 var(--ink); }
+  .btn-go { background:var(--crayon-green); color:#fff; width:100%; margin-top:24px; }
+  .btn-pay { background:var(--crayon-orange); color:#fff; font-size:22px; }
+  .btn[disabled] { opacity:.55; cursor:wait; }
+  #result { display:none; margin-top:30px; text-align:center; }
+  #pageFrame { position:relative; display:inline-block; border:4px solid var(--ink); border-radius:8px; overflow:hidden;
+    background:#fff; max-width:100%; }
+  #pageFrame img { display:block; max-width:min(480px,90vw); height:auto; }
+  #nameOverlay { position:absolute; top:0; left:0; right:0; text-align:center; padding:14px 8px 22px;
+    font-size:clamp(28px,7vw,52px); font-weight:bold; letter-spacing:2px; color:#111;
+    background:linear-gradient(#fff 55%, rgba(255,255,255,0)); pointer-events:none;
+    text-shadow:2px 2px 0 #fde68a; }
+  .price-tag { display:inline-block; background:#fff; border:3px dashed var(--crayon-red); border-radius:14px;
+    padding:18px 26px; margin:18px 0; font-size:18px; }
+  .price-tag s { color:#9ca3af; } .price-tag b { color:var(--crayon-red); font-size:30px; }
+  #err { display:none; background:#fee2e2; border:3px solid var(--crayon-red); border-radius:12px; padding:12px 16px;
+    margin-top:16px; font-family:"Segoe UI",sans-serif; }
+  .spinner { display:inline-block; width:22px; height:22px; border:4px solid #fff; border-top-color:transparent;
+    border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:-4px; margin-right:8px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  section.faq { padding:20px 0 60px; }
+  .faq details { background:#fff; border:2px solid var(--ink); border-radius:12px; padding:14px 18px; margin:10px 0;
+    font-family:"Segoe UI",sans-serif; }
+  .faq summary { font-weight:bold; cursor:pointer; font-family:inherit; }
+  footer { text-align:center; padding:26px; color:#6b7280; font-family:"Segoe UI",sans-serif; font-size:13px;
+    border-top:3px dashed #d1d5db; }
+  footer a { color:#6b7280; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="logo">🖍️</div>
+  <h1>A coloring book with <span class="hl">YOUR kid's name</span> on every page</h1>
+  <p class="sub">Type their name, pick their favorite thing — our AI draws a personalized coloring book in seconds. Print it at home, watch their face light up.</p>
+  <div class="steps">
+    <div class="step"><span class="n" style="background:var(--crayon-red)">1</span><h3>Enter name + theme</h3><p>Dinosaurs, space, unicorns… whatever they're obsessed with this week.</p></div>
+    <div class="step"><span class="n" style="background:var(--crayon-blue)">2</span><h3>See 1 page FREE</h3><p>Instantly. Their name, big and bold, on a real coloring page.</p></div>
+    <div class="step"><span class="n" style="background:var(--crayon-green)">3</span><h3>Unlock all 12 — $6</h3><p>The full printable PDF, personalized on every page. Yours forever.</p></div>
+  </div>
+</header>
+
+<section class="builder">
+  <div class="wrap">
+    <div class="card">
+      <h2>🎨 Make my free page</h2>
+      <p class="hint">Takes 20 seconds. No account, no credit card.</p>
+
+      <label for="kidName">Kid's first name</label>
+      <input type="text" id="kidName" maxlength="24" placeholder="e.g. Lily" autocomplete="off">
+
+      <label>Pick a theme</label>
+      <div class="themes" id="themes">
+        <div class="theme sel" data-t="dinosaurs"><span class="e">🦕</span>Dinosaurs</div>
+        <div class="theme" data-t="space"><span class="e">🚀</span>Space</div>
+        <div class="theme" data-t="ocean"><span class="e">🐠</span>Ocean</div>
+        <div class="theme" data-t="jungle animals"><span class="e">🦁</span>Jungle</div>
+        <div class="theme" data-t="unicorns"><span class="e">🦄</span>Unicorns</div>
+        <div class="theme" data-t="vehicles"><span class="e">🚗</span>Vehicles</div>
+        <div class="theme" data-t="farm animals"><span class="e">🐄</span>Farm</div>
+        <div class="theme" data-t="princess castle"><span class="e">🏰</span>Princess</div>
+      </div>
+
+      <label for="email">Parent's email <span style="font-weight:normal;color:#6b7280">(we'll send the free page + the $6 unlock link here)</span></label>
+      <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+
+      <button class="btn btn-go" id="goBtn" onclick="makeFree()">✨ Create my FREE coloring page</button>
+      <div id="err"></div>
+
+      <div id="result">
+        <h2 style="margin:26px 0 4px">Here's <span id="rName"></span>'s page! 🎉</h2>
+        <p class="hint">Imagine their name on <b>twelve</b> pages like this…</p>
+        <div id="pageFrame">
+          <img id="pageImg" alt="Personalized coloring page">
+          <div id="nameOverlay"></div>
+        </div>
+        <div>
+          <div class="price-tag"><s>$12</s> &nbsp;<b>$6</b> one-time<br><span style="font-size:14px;color:#4b5563">12 personalized pages · printable PDF · yours forever</span></div>
+        </div>
+        <button class="btn btn-pay" id="payBtn" onclick="checkout()">🔓 Unlock all 12 pages — $6</button>
+        <p class="hint" style="margin-top:12px">Secure checkout via Stripe. Instant download.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="faq">
+  <div class="wrap">
+    <h2 style="text-align:center;margin-bottom:14px">Questions parents ask</h2>
+    <details><summary>How do I print it?</summary><p style="margin-top:8px">The PDF is US Letter size — just hit print from any computer or phone. Regular paper works great; cardstock makes it extra nice.</p></details>
+    <details><summary>Is the $6 really one-time?</summary><p style="margin-top:8px">Yes. Pay once, download the PDF, print it as many times as you like, forever. No subscription, no upsells.</p></details>
+    <details><summary>What ages is it for?</summary><p style="margin-top:8px">Best for ages 3–8. Big bold outlines, large shapes, zero tiny fiddly details.</p></details>
+    <details><summary>Can I make one for each of my kids?</summary><p style="margin-top:8px">Absolutely — each book is personalized with one name. Siblings each get their own starring role. 🌟</p></details>
+  </div>
+</section>
+
+<footer>
+  Made with 🖍️ by <a href="https://mehyar.us">MehyarSoft</a> · Crayon Kid · Questions? <a href="mailto:info@mehyar.us">info@mehyar.us</a>
+</footer>
+
+<script>
+let theme = "dinosaurs";
+document.getElementById("themes").addEventListener("click", e => {
+  const el = e.target.closest(".theme");
+  if (!el) return;
+  document.querySelectorAll(".theme").forEach(t => t.classList.remove("sel"));
+  el.classList.add("sel");
+  theme = el.dataset.t;
+});
+const $ = id => document.getElementById(id);
+function showErr(msg) { const e = $("err"); e.textContent = msg; e.style.display = "block"; }
+function hideErr() { $("err").style.display = "none"; }
+
+async function makeFree() {
+  hideErr();
+  const kidName = $("kidName").value.trim();
+  const email = $("email").value.trim();
+  if (kidName.length < 2) return showErr("Please enter your kid's first name (2+ letters).");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr("Please enter a valid email so we can send the pages.");
+  const btn = $("goBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Drawing ' + kidName + "'s page… (about 20 seconds)";
+  try {
+    const r = await fetch("/api/free", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kid_name: kidName, theme, email })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error === "rate_limited" ? "Whoa, easy tiger! You've made a bunch of pages — try again in an hour." : (d.error || "Something went wrong drawing the page. Try again!"));
+    $("pageImg").src = d.image;
+    $("nameOverlay").textContent = d.kid_name;
+    $("rName").textContent = d.kid_name;
+    $("result").style.display = "block";
+    $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    showErr(e.message || "Couldn't draw the page — check your connection and try again.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ Create my FREE coloring page";
+  }
+}
+
+async function checkout() {
+  hideErr();
+  const email = $("email").value.trim();
+  const kidName = $("kidName").value.trim();
+  const btn = $("payBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Taking you to secure checkout…';
+  try {
+    const r = await fetch("https://mehyar.us/api/pay/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ product_id: "crayonkid-coloring-book", email, params: { kid_name: kidName, theme } })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok || !d.checkout_url) throw new Error("Couldn't start checkout — try again.");
+    window.location = d.checkout_url;
+  } catch (e) {
+    showErr(e.message);
+    btn.disabled = false;
+    btn.textContent = "🔓 Unlock all 12 pages — $6";
+  }
+}
+</script>
+</body>
+</html>

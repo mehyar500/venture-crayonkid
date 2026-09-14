@@ -1,0 +1,30 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "public/**"
+      - "functions/**"
+      - "lib/**"
+      - "wrangler.toml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      # wrangler.toml deliberately carries NO [vars] — this deploy cannot wipe
+      # dashboard env vars (see the lesson learned on mehyar-web, 2026-09-14).
+      - name: Deploy to Cloudflare Pages
+        run: npx -y wrangler@latest pages deploy ./public --project-name=crayonkid --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
