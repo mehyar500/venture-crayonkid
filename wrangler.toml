@@ -9,7 +9,8 @@ name = "crayonkid"
 compatibility_date = "2026-09-14"
 pages_build_output_dir = "public"
 
-# Workers AI binding — the only AI access path (no API tokens needed).
+# Workers AI binding — [ai] must be a SINGLE table (not [[ai]]) for
+# `wrangler pages deploy` to attach it. Verified working on venture-roast.
 [ai]
 binding = "AI"
 

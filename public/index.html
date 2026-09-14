@@ -104,7 +104,7 @@
         <div class="theme" data-t="princess castle"><span class="e">🏰</span>Princess</div>
       </div>
 
-      <label for="email">Parent's email <span style="font-weight:normal;color:#6b7280">(we'll send the free page + the $6 unlock link here)</span></label>
+      <label for="email">Parent's email <span style="font-weight:normal;color:#6b7280">(saves your setup for checkout — no spam, ever)</span></label>
       <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
 
       <button class="btn btn-go" id="goBtn" onclick="makeFree()">✨ Create my FREE coloring page</button>
@@ -159,7 +159,7 @@ async function makeFree() {
   const kidName = $("kidName").value.trim();
   const email = $("email").value.trim();
   if (kidName.length < 2) return showErr("Please enter your kid's first name (2+ letters).");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr("Please enter a valid email so we can send the pages.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr("Please enter a valid email address.");
   const btn = $("goBtn");
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Drawing ' + kidName + "'s page… (about 20 seconds)";

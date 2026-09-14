@@ -24,6 +24,7 @@
   #errBox { display:none; background:#fee2e2; border:3px solid #ef4444; border-radius:12px; padding:14px; margin-top:18px;
     font-family:"Segoe UI",sans-serif; }
   .tip { font-size:13px; margin-top:22px; }
+  a.home { font-family:"Segoe UI",sans-serif; color:#f97316; }
 </style>
 </head>
 <body>
@@ -40,7 +41,11 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const token = new URLSearchParams(location.search).get("token") || "";
+const qs = new URLSearchParams(location.search);
+// Stripe success URL carries ?paid=1&access_token=... ; legacy links used ?token=...
+const token = qs.get("access_token") || qs.get("token") || "";
+const paid = qs.get("paid") === "1";
+const canceled = qs.get("canceled") === "1";
 let pdfBlobUrl = null;
 
 const steps = ["Warming up the crayons…","Sketching page 3 of 12…","Adding dinosaurs…","Sketching page 7 of 12…",
@@ -53,7 +58,27 @@ const stepTimer = setInterval(() => {
 }, 7000);
 
 async function run() {
-  if (!token) return fail("This link is missing its access token. Please use the link from your checkout.");
+  if (canceled) return fail('Payment was canceled — no charge was made. <a class="home" href="/">Want to try again?</a>');
+  if (!token) return fail('This link is missing its access token. Please use the link from your checkout. <a class="home" href="/">Back home</a>');
+
+  // 1. Verify the payment + fetch personalization.
+  try {
+    const u = await fetch("/api/unlock?token=" + encodeURIComponent(token));
+    const ud = await u.json().catch(() => ({}));
+    if (u.status === 402 || ud.error === "not_paid") {
+      if (paid) return fail("We couldn't confirm your payment yet. If you just paid, wait a minute and refresh — Stripe sometimes takes a moment.");
+      return fail('This book hasn\'t been unlocked yet. <a class="home" href="/">Back home</a>');
+    }
+    if (!u.ok || !ud.ok) {
+      if (u.status === 403) return fail("This download link isn't valid. Double-check the link from your checkout page.");
+      throw new Error(ud.error || ("Server hiccup (" + u.status + ") — try refreshing."));
+    }
+    $("kidName").textContent = ud.kid_name || "your kid";
+  } catch (e) {
+    return fail(e.message || "Couldn't verify your purchase — try refreshing.");
+  }
+
+  // 2. Generate + download the PDF.
   try {
     const r = await fetch("/api/pdf?token=" + encodeURIComponent(token));
     if (!r.ok) {
@@ -90,7 +115,7 @@ function fail(msg) {
   $("desc").textContent = "";
   $("status").textContent = "";
   const b = $("errBox");
-  b.textContent = msg;
+  b.innerHTML = msg;
   b.style.display = "block";
 }
 run();

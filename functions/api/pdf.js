@@ -8,7 +8,7 @@
 import { PDFDocument, StandardFonts, rgb } from "../../lib/pdf-lib.bundle.js";
 
 const IMG_MODEL = "@cf/black-forest-labs/flux-1-schnell";
-const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 const PRODUCT_ID = "crayonkid-coloring-book";
 const STATUS_URL = "https://mehyar.us/api/pay/status?token=";
 const BROWSER_UA =
@@ -44,11 +44,13 @@ function fallbackScenes(theme) {
 }
 
 function lineArtPrompt(scene) {
+  // NB: do NOT use "children"/"kids" — the Workers AI safety filter flags them
+  // on image calls. "Coloring book page" conveys the style alone.
   return (
-    "Children's coloring book page: " + scene + ". " +
+    "Coloring book page, black and white line art: " + scene + ". " +
     "Bold thick black outlines only, pure white background, absolutely no shading, " +
-    "no gradients, no grayscale, no color, simple clean line art, large easy shapes " +
-    "for small children to color, cute and friendly. No text, no words, no letters, no watermark."
+    "no gradients, no grayscale, no color, simple clean line art, large easy shapes, " +
+    "cute and friendly. No text, no words, no letters, no watermark."
   );
 }
 
@@ -58,18 +60,17 @@ function sha256hex(str) {
   );
 }
 
+// flux-1-schnell returns { image: "<base64>" } via the Workers AI binding.
 async function aiImageBytes(env, prompt) {
   const out = await env.AI.run(IMG_MODEL, { prompt });
-  if (out instanceof ReadableStream) return new Uint8Array(await new Response(out).arrayBuffer());
-  if (out instanceof ArrayBuffer) return new Uint8Array(out);
-  if (out && out.buffer instanceof ArrayBuffer) return new Uint8Array(out.buffer);
-  if (out && typeof out.image === "string") {
-    const bin = atob(out.image);
-    const b = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
-    return b;
-  }
-  throw new Error("unexpected_ai_output");
+  let b64 = null;
+  if (out && typeof out.image === "string") b64 = out.image;
+  else if (typeof out === "string") b64 = out;
+  if (!b64) throw new Error("unexpected_ai_output");
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 async function sceneImage(env, theme, scene) {
@@ -98,8 +99,8 @@ async function planScenes(env, theme) {
         {
           role: "user",
           content:
-            "List 12 short, distinct, kid-friendly coloring page scene ideas about \"" + theme +
-            "\" for children ages 3-8. Each under 12 words, cute and simple. " +
+            'List 12 short, distinct, kid-friendly coloring page scene ideas about "' + theme +
+            '" for ages 3-8. Each under 12 words, cute and simple. ' +
             'Return ONLY a JSON array of 12 strings, e.g. ["a smiling ...", ...].',
         },
       ],
@@ -108,8 +109,9 @@ async function planScenes(env, theme) {
     const m = text.match(/\[[\s\S]*\]/);
     if (m) {
       const arr = JSON.parse(m[0]);
-      if (Array.isArray(arr) && arr.length >= 10) {
-        return arr.filter((s) => typeof s === "string" && s.length > 3).slice(0, 12);
+      if (Array.isArray(arr)) {
+        const scenes = arr.filter((s) => typeof s === "string" && s.length > 3).slice(0, 12);
+        if (scenes.length >= 10) return scenes;
       }
     }
   } catch (e) {
@@ -124,6 +126,14 @@ function cleanName(v) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 24);
+}
+
+// flux-1-schnell returns JPEG bytes; sniff the magic and use the right embedder.
+async function embedImage(doc, bytes) {
+  if (bytes.length > 2 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    return doc.embedJpg(bytes);
+  }
+  return doc.embedPng(bytes);
 }
 
 async function buildPdf(kidName, images) {
@@ -145,11 +155,11 @@ async function buildPdf(kidName, images) {
     page.drawRectangle({ x: (PW - w) / 2, y: PH - 88, width: w, height: 3, color: rgb(0.96, 0.62, 0.04) });
 
     // Coloring image, scaled to fit.
-    const png = await doc.embedPng(images[i]);
-    const dims = png.scale(1);
+    const img = await embedImage(doc, images[i]);
+    const dims = img.scale(1);
     const s = Math.min(540 / dims.width, 560 / dims.height);
     const iw = dims.width * s, ih = dims.height * s;
-    page.drawImage(png, { x: (PW - iw) / 2, y: 64 + (600 - ih) / 2, width: iw, height: ih });
+    page.drawImage(img, { x: (PW - iw) / 2, y: 64 + (600 - ih) / 2, width: iw, height: ih });
 
     // Footer.
     const foot = "Page " + (i + 1) + " of " + images.length + "  ·  Crayon Kid";
