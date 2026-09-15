@@ -42,7 +42,17 @@ export async function onRequestGet({ request, env, waitUntil }) {
       signal: AbortSignal.timeout(15000),
     });
     const sj = await st.json().catch(() => ({}));
-    if (!st.ok || !sj.ok) {
+    if (!st.ok) {
+      // Central ledger answered "unknown token" -> clean 403. Only use 502
+      // when the central call itself failed: the Pages edge swallows our
+      // JSON body on a function-returned 502, so unknown tokens must not
+      // take that path.
+      if (st.status === 404) {
+        return Response.json({ ok: false, error: "invalid_token" }, { status: 403 });
+      }
+      return Response.json({ ok: false, error: "verification_failed" }, { status: 502 });
+    }
+    if (!sj.ok) {
       return Response.json({ ok: false, error: "verification_failed" }, { status: 502 });
     }
     if (sj.product_id !== PRODUCT_ID) {
