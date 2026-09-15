@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Crayon Kid warmup — daily execution script (run by the 8:00 AM ET cron).
+
+Every run:
+  1. Computes today's campaign_day (# of prior send days + 1) and the
+     Fibonacci volume for the day, capped at BREVO_DAILY_CAP.
+  2. Enforces the safety gates — sends NOTHING and reports PAUSED when:
+       - trailing bounce rate >= 2%
+       - ANY spam complaint in the trailing window
+       - the screened pool can't cover today's volume (never re-send)
+       - today's send already ran (idempotent)
+  3. Draws fresh recipients WITHOUT replacement across ALL brands:
+       brand='crayonkid', source='legacy-daily', status='pending',
+       email NOT IN (SELECT recipient_email FROM warmup_campaign_sends)
+     (opted_out/suppressed addresses are excluded by the status filter,
+     because unsubscribe flips status away from 'pending').
+  4. Sends via Brevo transactional API as "Crayon Kid" <info@mehyar.us>,
+     with RFC 8058 one-click List-Unsubscribe headers + visible footer link.
+  5. Logs every send to the shared warmup_campaign_sends table and rolls
+     the day up into warmup_campaign_daily (both on the central mehyar-jobs
+     D1 — every brand writes to the SAME tables).
+
+Usage: send_day.py [--dry-run]
+  --dry-run: compute day/volume/draw, print the plan, send and write nothing.
+Exit codes: 0 ok (sent or cleanly paused), 2 misconfiguration.
+Prints a JSON summary on stdout for the cron report.
+"""
+from __future__ import annotations
+import datetime
+import json
+import os
+import secrets
+import sys
+import time
+import urllib.request
+from zoneinfo import ZoneInfo
+
+NY = ZoneInfo("America/New_York")
+
+sys.path.insert(0, "/opt/hatch/skills/skill-creator/bin")
+from dynamic_credentials import add_surrogate_to_request, read_json_response
+
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
+ACCOUNT_ID = "621600637337cc1c9ecb7095508bc732"
+CENTRAL_DB = "de494f9a-9da2-4123-8bb7-269473cca8a6"  # mehyar-jobs D1 (shared)
+CF_CRED, CF_HOSTS = "custom.cloudflare", ["api.cloudflare.com"]
+BREVO_CRED, BREVO_HOSTS = "custom.brevo", ["api.brevo.com"]
+
+BRAND = "crayonkid"
+SITE = "https://crayonkid.mehyar.us"
+SENDER = {"name": "Crayon Kid", "email": "info@mehyar.us"}
+BREVO_DAILY_CAP = 300          # Brevo free plan: 300 sends/day
+BOUNCE_PAUSE_RATE = 0.02       # pause at >= 2% trailing bounce rate
+COMPLAINT_PAUSE = 1            # pause on >= 1 complaint in trailing window
+TRAIL_DAYS = 3                 # trailing window for the scale rule
+
+
+def fib_volume(day: int) -> int:
+    a, b = 5, 10
+    if day <= 1:
+        return a
+    for _ in range(2, day + 1):
+        a, b = b, a + b
+    return b
+
+
+def cf_d1(sql: str, params: list | None = None):
+    url = (f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}"
+           f"/d1/database/{CENTRAL_DB}/query")
+    payload = {"sql": sql}
+    if params:
+        payload["params"] = params
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json",
+                 "X-Auth-Email": cf_email(), "User-Agent": UA}, method="POST")
+    add_surrogate_to_request(req, CF_CRED, allowed_hosts=CF_HOSTS)
+    with urllib.request.urlopen(req, timeout=90) as resp:
+        body = read_json_response(resp)
+    if not body.get("success"):
+        raise RuntimeError("D1 error: " + json.dumps(body)[:500])
+    rows = []
+    for r in body.get("result", []):
+        rows.extend(r.get("results", []))
+    return rows
+
+
+def cf_email() -> str:
+    with open(os.path.expanduser("~/workspace/skills/cloudflare/config.json")) as f:
+        return json.load(f)["email"]
+
+
+def brevo_send(to_email: str, to_name: str, subject: str, html: str,
+               text: str, headers: dict, tag: str) -> dict:
+    payload = {
+        "sender": SENDER,
+        "to": [{"email": to_email, "name": to_name or to_email}],
+        "subject": subject,
+        "htmlContent": html,
+        "textContent": text,
+        "headers": headers,
+        "tags": ["warmup", BRAND, tag],
+    }
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "User-Agent": UA},
+        method="POST")
+    add_surrogate_to_request(req, BREVO_CRED, allowed_hosts=BREVO_HOSTS)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return {"ok": True, "body": read_json_response(resp)}
+    except Exception as e:  # noqa: BLE001 - network/API failure -> failed send row
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+SUBJECT = "Your kid's name, inside their own coloring book \U0001f58d\ufe0f"
+
+HTML_TMPL = """<div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;color:#1f2937">
+<p>{greet}</p>
+<p>Quick one — I'm Mehyar, I make <b>Crayon Kid</b>, a personalized coloring book where your child's name appears on <b>every page</b>.</p>
+<p>You can make a <b>free first page</b> in about 20 seconds: pick a theme, describe anything ("a dragon having a tea party"), or turn a photo of their pet or toy into a coloring page.</p>
+<p style="text-align:center;margin:28px 0"><a href="{site}/?utm_source=warmup&utm_medium=email&utm_campaign=day{day}"
+style="background:#f97316;color:#fff;padding:14px 30px;border-radius:12px;text-decoration:none;font-weight:bold">Make our free page</a></p>
+<p style="font-size:13px;color:#6b7280">Why you're getting this: your email was on a list of parents interested in kids' activities. If that's not you anymore, <a href="{unsub}">unsubscribe instantly</a> — one tap, gone forever, no hard feelings.</p>
+<p>— Mehyar, Crayon Kid<br><a href="{site}">{site}</a></p>
+</div>"""
+
+TEXT_TMPL = """{greet}
+
+Quick one — I'm Mehyar, I make Crayon Kid, a personalized coloring book where your child's name appears on every page.
+
+You can make a free first page in about 20 seconds: pick a theme, describe anything ("a dragon having a tea party"), or turn a photo of their pet or toy into a coloring page:
+{site}/?utm_source=warmup&utm_medium=email&utm_campaign=day{day}
+
+Why you're getting this: your email was on a list of parents interested in kids' activities. If that's not you anymore, unsubscribe instantly (one tap, gone forever): {unsub}
+
+— Mehyar, Crayon Kid
+{site}"""
+
+
+def main(argv: list[str]) -> int:
+    dry = "--dry-run" in argv
+    today = datetime.datetime.now(NY).date().isoformat()
+
+    # 1. Day number + idempotency
+    rows = cf_d1("SELECT campaign_day, date FROM warmup_campaign_daily WHERE brand=? ORDER BY campaign_day",
+                 [BRAND])
+    if rows and rows[-1]["date"] == today:
+        print(json.dumps({"status": "already_ran_today", "day": rows[-1]["campaign_day"], "date": today}))
+        return 0
+    day = (rows[-1]["campaign_day"] + 1) if rows else 1
+    volume = min(fib_volume(day), BREVO_DAILY_CAP)
+
+    # 2. Safety gates — trailing window
+    trail = rows[-TRAIL_DAYS:] if rows else []
+    t_sent = sum(r["sent_count"] or 0 for r in trail)
+    t_bounce = sum(r["bounce_count"] or 0 for r in trail)
+    t_complaint = sum(r.get("complaint_count") or 0 for r in trail)
+    bounce_rate = (t_bounce / t_sent) if t_sent else 0.0
+    gate = None
+    if t_sent and bounce_rate >= BOUNCE_PAUSE_RATE:
+        gate = f"bounce_rate {bounce_rate:.2%} >= 2% over last {len(trail)} day(s)"
+    elif t_complaint >= COMPLAINT_PAUSE:
+        gate = f"{t_complaint} spam complaint(s) in trailing window"
+
+    # 3. Draw (without replacement, all brands; pending-only excludes opted_out)
+    pool = cf_d1("SELECT COUNT(*) n FROM email_contact WHERE brand=? AND source='legacy-daily' AND status='pending'",
+                 [BRAND])[0]["n"]
+    used = cf_d1("SELECT COUNT(*) n FROM warmup_campaign_sends")[0]["n"]
+    draw = []
+    if not gate:
+        draw = cf_d1(
+            """SELECT email, first_name FROM email_contact
+               WHERE brand=? AND source='legacy-daily' AND status='pending'
+                 AND email NOT IN (SELECT recipient_email FROM warmup_campaign_sends)
+               LIMIT ?""", [BRAND, volume])
+        if len(draw) < volume:
+            gate = f"pool exhausted: drew {len(draw)} of {volume} needed ({pool} pending total, {used} already used across all brands)"
+
+    summary = {
+        "status": "paused" if gate else ("dry_run" if dry else "sending"),
+        "day": day, "date": today, "planned_volume": volume,
+        "pool_pending": pool, "used_all_brands": used,
+        "trailing": {"days": len(trail), "sent": t_sent, "bounces": t_bounce,
+                     "bounce_rate": round(bounce_rate, 4), "complaints": t_complaint},
+        "gate": gate,
+    }
+    if gate or dry:
+        summary["would_send"] = len(draw)
+        print(json.dumps(summary, indent=1))
+        return 0
+
+    # 4+5. Send + log
+    sent_ok, sent_fail = 0, 0
+    for i, c in enumerate(draw):
+        email = c["email"]
+        name = (c.get("first_name") or "").strip()
+        greet = f"Hi {name}," if name else "Hi there,"
+        token = secrets.token_urlsafe(32)
+        unsub = f"{SITE}/api/warmup-unsubscribe?token={token}"
+        html = HTML_TMPL.format(greet=greet, site=SITE, day=day, unsub=unsub)
+        text = TEXT_TMPL.format(greet=greet, site=SITE, day=day, unsub=unsub)
+        res = brevo_send(
+            email, name, SUBJECT, html, text,
+            {"List-Unsubscribe": f"<{unsub}>",
+             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},
+            f"day-{day}")
+        msg_id = (res.get("body") or {}).get("messageId") if res["ok"] else None
+        status = "sent" if res["ok"] else "failed"
+        try:
+            cf_d1("INSERT INTO warmup_unsub_tokens (token, email, brand) VALUES (?,?,?)",
+                  [token, email, BRAND])
+            cf_d1(
+                """INSERT INTO warmup_campaign_sends
+                   (brand, campaign_day, recipient_email, sent_at, status, message_id, source)
+                   VALUES (?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?, 'legacy-daily')""",
+                [BRAND, day, email, status, msg_id])
+        except RuntimeError as e:
+            print(f"D1 LOG FAILED for {email}: {e}", file=sys.stderr)
+        sent_ok += 1 if res["ok"] else 0
+        sent_fail += 0 if res["ok"] else 1
+        if not res["ok"]:
+            print(f"send failed {email}: {res.get('error')}", file=sys.stderr)
+        time.sleep(0.2)  # polite pacing on the free plan
+
+    cf_d1(
+        """INSERT INTO warmup_campaign_daily
+           (brand, campaign_day, date, planned_volume, sent_count,
+            delivered_count, open_count, click_count, bounce_count, unsub_count, complaint_count)
+           VALUES (?,?,?,?,?,0,0,0,0,0,0)""",
+        [BRAND, day, today, volume, sent_ok])
+
+    summary.update({"status": "sent", "sent": sent_ok, "failed": sent_fail})
+    print(json.dumps(summary, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv))
+    except RuntimeError as e:
+        print(json.dumps({"status": "error", "error": str(e)[:300]}))
+        raise SystemExit(2)
