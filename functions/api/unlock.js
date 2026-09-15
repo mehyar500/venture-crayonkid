@@ -10,6 +10,7 @@
 
 import { sendCloudflareEmail } from "../_shared/cloudflareEmail.js";
 import { claimSend, markSend } from "../_shared/emailSends.js";
+import { unsubUrlFor } from "../_shared/centralStore.js";
 
 const SITE = "https://crayonkid.mehyar.us";
 const FROM_EMAIL = "team@mehyar.us";
@@ -61,6 +62,11 @@ export async function onRequestGet({ request, env, waitUntil }) {
           try {
             const claimed = await claimSend(env.DB, "unlock_receipt", token, sj.email);
             if (!claimed) return; // receipt already sent for this purchase
+            // Per-recipient tokenized unsubscribe link for the footer.
+            // This receipt is transactional fulfillment (proof of purchase +
+            // permanent download link) so it sends even if the address
+            // unsubscribed from marketing mail — the link below still works.
+            const unsubUrl = await unsubUrlFor(env, sj.email, SITE);
             const dlUrl = SITE + "/api/pdf?token=" + encodeURIComponent(token);
             const unlockUrl = SITE + "/unlock?paid=1&access_token=" + encodeURIComponent(token);
             const subject = "Your Crayon Kid book is ready \u{1F389}";
@@ -72,7 +78,8 @@ export async function onRequestGet({ request, env, waitUntil }) {
               "The PDF is high-resolution print quality — crisp on US Letter or A4 paper.\n\n" +
               "Prefer the animated unlock page? It's here:\n" + unlockUrl + "\n\n" +
               "Print tip: US Letter paper works great; cardstock makes the pages extra sturdy.\n\n" +
-              "Happy coloring!\n-- Crayon Kid";
+              "Happy coloring!\n-- Crayon Kid" +
+              (unsubUrl ? "\n\nUnsubscribe from Crayon Kid marketing emails: " + unsubUrl : "");
             const esc = (s) =>
               String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
             const html =
@@ -82,7 +89,8 @@ export async function onRequestGet({ request, env, waitUntil }) {
               '<p style="text-align:center;color:#6b7280;font-size:13px;">High-resolution print PDF — crisp on US Letter or A4 paper.</p>' +
               '<p style="text-align:center;"><a href="' + dlUrl + '" style="display:inline-block;background:#22c55e;color:#fff;padding:14px 30px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:18px;">\u2B07\uFE0F Download the coloring book (PDF)</a></p>' +
               '<p style="text-align:center;color:#6b7280;font-size:13px;">This is your <b>permanent</b> download link — save it somewhere safe.<br>Re-download and print as many times as you like, forever.<br><br>Prefer the animated unlock page? <a href="' + unlockUrl + '">Open it here</a>.<br>\u{1F5A8}\uFE0F Print tip: US Letter paper works great; cardstock makes pages extra sturdy.</p>' +
-              '<p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:24px;">Receipt for your $6 one-time purchase at Crayon Kid. Questions? Just reply to this email.</p>' +
+              '<p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:24px;">Receipt for your $6 one-time purchase at Crayon Kid. Questions? Just reply to this email.' +
+              (unsubUrl ? '<br><a href="' + unsubUrl + '" style="color:#9ca3af;">Unsubscribe from marketing emails</a>' : "") + '</p>' +
               "</div>";
             const result = await sendCloudflareEmail(env, {
               from: FROM_EMAIL,

@@ -14,6 +14,7 @@
 import { THEMES, cleanName, sha256hex, sniffMime, toDataUrl, aiImageBytes,
          lineArtPrompt, sanitizePrompt, planSceneFromPrompt } from "../_shared/ai.js";
 import { sendFreePageEmail, SITE } from "../_shared/freePageEmail.js";
+import { upsertCentralContact } from "../_shared/centralStore.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -91,6 +92,11 @@ export async function onRequestPost({ request, env, waitUntil }) {
     } catch (e) {
       console.error("lead insert failed", e && e.message);
     }
+
+    // Central signup store: brand='crayonkid' row in mehyar.jobs'
+    // email_contact. Awaited — the task requires every capture to land
+    // centrally. Local D1 write stays the source of truth for this worker.
+    await upsertCentralContact(env, email, "free_page").catch(() => null);
 
     // Shared image cache. Default path (simple theme scenes) keeps the legacy
     // key format so existing cached drawings are reused, not regenerated.

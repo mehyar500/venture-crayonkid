@@ -22,6 +22,7 @@
 import { cleanName, sha256hex, sniffMime, toDataUrl, aiImageBytes,
          lineArtPrompt, describePhoto } from "../_shared/ai.js";
 import { sendFreePageEmail, SITE } from "../_shared/freePageEmail.js";
+import { upsertCentralContact } from "../_shared/centralStore.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BYTES = 2.5 * 1024 * 1024; // client downscales to ~1024px JPEG first
@@ -86,6 +87,10 @@ export async function onRequestPost({ request, env, waitUntil }) {
         "INSERT INTO leads (email, kid_name, theme) VALUES (?, ?, 'photo')"
       ).bind(email, kidName).run();
     } catch (e) { console.error("photo lead insert failed", e && e.message); }
+    // Central signup store — brand='crayonkid' in the shared
+    // email_contact table. Awaited so every capture lands centrally.
+    // Local D1 writes stay untouched.
+    await upsertCentralContact(env, email, "free_page_photo").catch(() => null);
     try {
       await env.DB.prepare(
         "INSERT INTO purchase_context (email, kid_name, theme, complexity, custom_prompt, photo_desc_id) " +
