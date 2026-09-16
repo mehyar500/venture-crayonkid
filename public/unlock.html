@@ -19,12 +19,14 @@
     transition:width .5s; }
   #status { font-weight:bold; min-height:28px; }
   .btn { display:none; border:3px solid var(--ink); border-radius:14px; padding:16px 34px; font-size:20px; font-weight:bold;
-    font-family:inherit; cursor:pointer; box-shadow:5px 5px 0 var(--ink); background:#f97316; color:#fff; margin-top:18px; }
+    font-family:inherit; cursor:pointer; box-shadow:5px 5px 0 var(--ink); background:#ea580c; color:#fff; margin-top:18px; }
   .btn:hover { transform:translateY(-2px); }
   #errBox { display:none; background:#fee2e2; border:3px solid #ef4444; border-radius:12px; padding:14px; margin-top:18px;
     font-family:"Segoe UI",sans-serif; }
   .tip { font-size:13px; margin-top:22px; }
-  a.home { font-family:"Segoe UI",sans-serif; color:#f97316; }
+  a.home { font-family:"Segoe UI",sans-serif; color:#ea580c; }
+  .foot { margin-top:22px; font-size:13px; }
+  .foot a { color:#6b7280; margin:0 8px; }
 </style>
 </head>
 <body>
@@ -37,6 +39,7 @@
   <button class="btn" id="dlBtn">⬇️ Download my coloring book (PDF)</button>
   <div id="errBox"></div>
   <p class="tip">🖨️ Tip: print on US Letter paper. Cardstock makes the pages extra sturdy for enthusiastic colorers.</p>
+  <p class="foot"><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a class="home" href="/">Crayon Kid home</a></p>
 </div>
 
 <script>
