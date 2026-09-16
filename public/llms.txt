@@ -1,0 +1,40 @@
+Crayon Kid — https://crayonkid.mehyar.us/
+
+Crayon Kid is an AI coloring book generator made by Mehyar Soft. It creates
+personalized coloring books for kids: the kid's name appears on every page.
+
+PRICING
+- 1 personalized coloring page: FREE, no account, no credit card
+- Full 12-page personalized coloring book (high-resolution print PDF): $6
+  one-time payment via Stripe. No subscription, no upsells. Unlimited printing
+  for your own family.
+
+HOW IT WORKS
+1. Enter the kid's first name and pick how to create the page: choose one of
+   8 themes (dinosaurs, space, ocean, jungle, unicorns, vehicles, farm,
+   princess), describe anything in your own words, or upload a photo to be
+   redrawn as a coloring page.
+2. Pick a detail level (Simple for ages 3–5, Detailed for ages 6+).
+3. Enter the parent's email — the free page is generated instantly and the
+   setup is saved so a link can bring you back to checkout later.
+4. Pay $6 via Stripe to unlock the full 12-page PDF (US Letter, print-quality
+   raster art), delivered instantly.
+
+SAMPLES (real pages made with Crayon Kid)
+- https://crayonkid.mehyar.us/samples/crayonkid-test-leo-space.jpg (Leo's space theme)
+- https://crayonkid.mehyar.us/samples/crayonkid-test-custom-dragon.jpg (a dragon tea party, described by a parent)
+- https://crayonkid.mehyar.us/samples/crayonkid-test-photo-puppy.jpg (a puppy photo redrawn as line art)
+
+LINKS
+- Home / create a page: https://crayonkid.mehyar.us/
+- Privacy policy: https://crayonkid.mehyar.us/privacy.html
+- Terms of service: https://crayonkid.mehyar.us/terms.html
+- Mehyar Soft apps: https://mehyar.us/apps
+- Contact: info@mehyar.us
+
+PRIVACY SUMMARY
+Uploaded photos are processed in memory to draw the page and are never stored
+or shared. The coloring pages we generate are cached briefly (up to 30 days)
+so we can email and show your free page. Emails are used only for your free
+page, checkout reminders, and purchase receipts — no spam. Full details at
+https://crayonkid.mehyar.us/privacy.html

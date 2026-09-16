@@ -19,6 +19,15 @@ binding = "DB"
 database_name = "crayonkid_db"
 database_id = "baa59e21-216c-4386-baf0-240262ccdc97"
 
+# CENTRAL signup store: mehyar.jobs' production D1 (same Cloudflare
+# account). Crayon Kid captures ALSO write to email_contact with
+# brand='crayonkid' here; suppression checks read it. Config-only:
+# no mehyar.jobs code changes required.
+[[d1_databases]]
+binding = "CENTRAL_DB"
+database_name = "mehyar-jobs"
+database_id = "de494f9a-9da2-4123-8bb7-269473cca8a6"
+
 [[kv_namespaces]]
 binding = "CACHE"
 id = "a0f96a11a03d4f6cb868d2e85f5a1141"
