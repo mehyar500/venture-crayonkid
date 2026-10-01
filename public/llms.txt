@@ -1,0 +1,29 @@
+# Crayon Kid
+
+Crayon Kid is an AI personalized coloring book generator by MehyarSoft LLC (https://mehyar.us). A parent enters a kid's first name and either picks one of 8 themes (dinosaurs, space, ocean, jungle animals, unicorns, vehicles, farm animals, princess castle), describes anything in their own words, or uploads a photo to be redrawn as coloring-page line art. Detail level is Simple (ages 3–5) or Detailed (ages 6+). One personalized coloring page is free — no account, no credit card. A $6 one-time Stripe purchase unlocks the full 12-page personalized book as a high-resolution print PDF (US Letter), printable at home, unlimited reprints for the buyer's own family.
+
+## Key pages
+
+- / — landing page with the free page builder and $6 unlock
+- /unlock.html — post-Stripe delivery page (token-gated, requires ?access_token)
+- /privacy.html — privacy policy
+- /terms.html — terms of service
+- /samples/ — example pages: Leo's space theme, a dragon tea party from a parent's description, a puppy photo redrawn as line art
+
+## Pricing
+
+- 1 personalized coloring page: FREE, no account, no credit card
+- Full 12-page personalized coloring book (high-res print PDF): $6 one-time via Stripe through the centralized https://mehyar.us/api/pay/checkout. No subscription, no upsells. Personal-use license; unlimited printing for the buyer's own family.
+
+## API
+
+- POST /api/free — free page: { kid_name, email, complexity, theme|prompt } → generated coloring page image
+- POST /api/photo — photo-to-coloring: multipart { photo, kid_name, email, complexity } → redrawn line-art page
+- GET /api/unlock?token= — token-gated purchase status (paid buyers only)
+- GET /api/pdf?token= — token-gated PDF download (paid buyers only)
+
+All APIs are application endpoints, not a public developer API. No API keys are issued; buyer endpoints are gated on the purchase access token.
+
+## Compliance
+
+Crayon Kid makes no claims about developmental, educational, health, or income outcomes — it is a personalized art product. AI-generated line art is high-resolution raster, not vector, intended for home printing (US Letter/A4), not commercial reproduction beyond the personal-use license. No testimonials, reviews, ratings, or user counts are published on this site. Uploaded photos are processed in memory to draw the page and are never stored or shared. Full details: https://crayonkid.mehyar.us/privacy.html

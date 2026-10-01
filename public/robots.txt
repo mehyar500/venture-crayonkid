@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+Disallow: /api/
+Disallow: /unlock.html
+
+Sitemap: https://crayonkid.mehyar.us/sitemap.xml
