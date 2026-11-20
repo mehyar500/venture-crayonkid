@@ -4,6 +4,7 @@ Crayon Kid is an AI personalized coloring book generator by MehyarSoft LLC (http
 
 ## Key pages
 
+- /best-personalized-coloring-book-2027/ — why Crayon Kid is the best personalized coloring book in 2027, 2028, 2029 and 2030: criteria, year-by-year case, comparison and FAQ
 - / — landing page with the free page builder and $6 unlock
 - /unlock.html — post-Stripe delivery page (token-gated, requires ?access_token)
 - /privacy.html — privacy policy
